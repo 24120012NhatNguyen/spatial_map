@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Spatial Map – Rạp phim</string>
+    <string name="seat_map_description">Sơ đồ ghế phòng chiếu. Kéo để di chuyển, chụm hai ngón để phóng to thu nhỏ, chạm vào ghế để chọn.</string>
+    <string name="toolbar_subtitle">%1$s · %2$s</string>
+
+    <string name="summary_empty_title">Chưa chọn ghế</string>
+    <string name="summary_empty_detail">Chạm vào ghế trống để chọn · tối đa %1$d ghế</string>
+    <string name="summary_title">Đã chọn %1$d/%2$d ghế · %3$s</string>
+
+    <string name="seat_booked">Ghế %1$s đã có người đặt</string>
+    <string name="seat_locked">Ghế %1$s đang bị khóa (bảo trì)</string>
+    <string name="seat_limit_reached">Chỉ được chọn tối đa %1$d ghế</string>
 </resources>

@@ -11,4 +11,8 @@
     <string name="seat_booked">Ghế %1$s đã có người đặt</string>
     <string name="seat_locked">Ghế %1$s đang bị khóa (bảo trì)</string>
     <string name="seat_limit_reached">Chỉ được chọn tối đa %1$d ghế</string>
+
+    <!-- TalkBack: "Ghế E7, Ghế VIP, 95.000đ, Còn trống" -->
+    <string name="a11y_seat">Ghế %1$s, %2$s, %3$s, %4$s</string>
+    <string name="a11y_state_selected">Đang chọn</string>
 </resources>

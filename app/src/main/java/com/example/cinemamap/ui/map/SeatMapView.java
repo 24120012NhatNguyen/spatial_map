@@ -2,10 +2,14 @@ package com.example.cinemamap.ui.map;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Rect;
+import android.graphics.RectF;
+import android.os.Bundle;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.util.AttributeSet;
 import android.view.GestureDetector;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
@@ -14,13 +18,18 @@ import android.widget.OverScroller;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
+import androidx.customview.widget.ExploreByTouchHelper;
 
 import com.example.cinemamap.data.CinemaLayout;
 import com.example.cinemamap.data.MockCinemaRepository;
+import com.example.cinemamap.data.PriceFormatter;
 import com.example.cinemamap.data.Seat;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 
 /**
  * Custom View vẽ toàn bộ sơ đồ phòng chiếu trên MỘT Canvas duy nhất (không tạo View con cho ghế).
@@ -37,7 +46,6 @@ public class SeatMapView extends View {
     }
 
     private static final float FIT_PADDING_DP = 12f;
-    private static final float PAN_MARGIN_DP = 48f;
     private static final float TOUCH_TOLERANCE_DP = 10f;
     /** Không cho vùng dung sai chạm vượt quá ~40% cạnh ghế để tránh chọn nhầm ghế bên cạnh. */
     private static final float MAX_WORLD_TOLERANCE = MockCinemaRepository.SEAT_SIZE * 0.4f;
@@ -52,6 +60,8 @@ public class SeatMapView extends View {
     private final OverScroller scroller;
     private final float[] visibleWorld = new float[4];
     private final float[] panBounds = new float[4];
+    private final float[] availableWorld = new float[4];
+    private final SeatAccessibilityHelper accessibilityHelper;
 
     @Nullable
     private CinemaLayout layout;
@@ -79,7 +89,7 @@ public class SeatMapView extends View {
     public SeatMapView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
         density = getResources().getDisplayMetrics().density;
-        viewport = new Viewport(FIT_PADDING_DP * density, PAN_MARGIN_DP * density);
+        viewport = new Viewport(FIT_PADDING_DP * density);
         renderer = new SeatRenderer(context);
         scroller = new OverScroller(context);
         scaleDetector = new ScaleGestureDetector(context, new ScaleListener());
@@ -92,6 +102,9 @@ public class SeatMapView extends View {
         gestureDetector.setOnDoubleTapListener(null);
         setClickable(true);
         setFocusable(true);
+        // Mỗi ghế là một "virtual view" cho TalkBack mà vẫn vẽ trên một Canvas duy nhất.
+        accessibilityHelper = new SeatAccessibilityHelper(this);
+        ViewCompat.setAccessibilityDelegate(this, accessibilityHelper);
     }
 
     // region Public API
@@ -122,6 +135,7 @@ public class SeatMapView extends View {
             }
         }
         invalidate();
+        accessibilityHelper.invalidateRoot();
     }
 
     /** Vùng bị che bởi các thành phần nổi phía trên sơ đồ (px). */
@@ -205,15 +219,29 @@ public class SeatMapView extends View {
     }
 
     private void handleTap(float screenX, float screenY) {
-        if (layout == null || !viewport.isInAvailableArea(screenX, screenY)) {
-            return; // Bỏ qua chạm vào vùng bị thẻ tóm tắt/bottom sheet che.
+        int index = findSeatAt(screenX, screenY);
+        if (index != HitTester.NO_HIT) {
+            dispatchSeatClick(index);
+        }
+    }
+
+    /** Hit-test một điểm màn hình; trả về chỉ số ghế hoặc {@link HitTester#NO_HIT}. */
+    private int findSeatAt(float screenX, float screenY) {
+        if (layout == null || !viewport.isReady() || !viewport.isInAvailableArea(screenX, screenY)) {
+            return HitTester.NO_HIT; // Bỏ qua chạm vào vùng bị thành phần nổi (bottom sheet) che.
         }
         // Đổi điểm chạm sang tọa độ world – đúng với mọi mức Pan/Zoom.
         float worldX = viewport.screenToWorldX(screenX);
         float worldY = viewport.screenToWorldY(screenY);
         float tolerance = Math.min(TOUCH_TOLERANCE_DP * density / viewport.getScale(), MAX_WORLD_TOLERANCE);
-        int index = HitTester.findSeatIndex(layout.getSeats(), worldX, worldY, tolerance);
-        if (index != HitTester.NO_HIT && seatClickListener != null) {
+        // Chỉ xét ghế người dùng đang nhìn thấy.
+        viewport.getAvailableWorldRect(availableWorld);
+        return HitTester.findSeatIndex(layout.getSeats(), worldX, worldY, tolerance,
+                availableWorld[0], availableWorld[1], availableWorld[2], availableWorld[3]);
+    }
+
+    private void dispatchSeatClick(int index) {
+        if (layout != null && seatClickListener != null) {
             seatClickListener.onSeatClick(layout.getSeats().get(index));
         }
     }
@@ -283,6 +311,91 @@ public class SeatMapView extends View {
             performClick();
             handleTap(e.getX(), e.getY());
             return true;
+        }
+    }
+
+    // endregion
+
+    // region Accessibility (TalkBack)
+
+    @Override
+    protected boolean dispatchHoverEvent(MotionEvent event) {
+        return accessibilityHelper.dispatchHoverEvent(event) || super.dispatchHoverEvent(event);
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        return accessibilityHelper.dispatchKeyEvent(event) || super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    protected void onFocusChanged(boolean gainFocus, int direction, @Nullable Rect previouslyFocusedRect) {
+        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
+        accessibilityHelper.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
+    }
+
+    private final class SeatAccessibilityHelper extends ExploreByTouchHelper {
+        private final Rect seatBounds = new Rect();
+
+        SeatAccessibilityHelper(@NonNull View host) {
+            super(host);
+        }
+
+        @Override
+        protected int getVirtualViewAt(float x, float y) {
+            int index = findSeatAt(x, y);
+            return index == HitTester.NO_HIT ? ExploreByTouchHelper.INVALID_ID : index;
+        }
+
+        @Override
+        protected void getVisibleVirtualViews(List<Integer> virtualViewIds) {
+            if (layout == null || !viewport.isReady()) {
+                return;
+            }
+            viewport.getAvailableWorldRect(availableWorld);
+            List<Seat> seats = layout.getSeats();
+            for (int i = 0, n = seats.size(); i < n; i++) {
+                if (seats.get(i).getBounds().intersects(
+                        availableWorld[0], availableWorld[1], availableWorld[2], availableWorld[3])) {
+                    virtualViewIds.add(i);
+                }
+            }
+        }
+
+        // ExploreByTouchHelper vẫn yêu cầu setBoundsInParent() cho virtual view.
+        @SuppressWarnings("deprecation")
+        @Override
+        protected void onPopulateNodeForVirtualView(int virtualViewId, @NonNull AccessibilityNodeInfoCompat node) {
+            if (layout == null || virtualViewId < 0 || virtualViewId >= layout.getSeats().size()) {
+                node.setContentDescription("");
+                node.setBoundsInParent(seatBounds);
+                return;
+            }
+            Seat seat = layout.getSeats().get(virtualViewId);
+            boolean selected = selectedFlags[virtualViewId];
+            String state = selected
+                    ? getContext().getString(com.example.cinemamap.R.string.a11y_state_selected)
+                    : seat.getStatus().getDisplayName();
+            node.setContentDescription(getContext().getString(com.example.cinemamap.R.string.a11y_seat,
+                    seat.getId(), seat.getType().getDisplayName(), PriceFormatter.format(seat.getPrice()), state));
+            node.setSelected(selected);
+            node.setClickable(true);
+            node.addAction(AccessibilityNodeInfoCompat.ACTION_CLICK);
+            RectF r = renderer.getSeatRect(virtualViewId);
+            seatBounds.set(
+                    Math.round(viewport.worldToScreenX(r.left)), Math.round(viewport.worldToScreenY(r.top)),
+                    Math.round(viewport.worldToScreenX(r.right)), Math.round(viewport.worldToScreenY(r.bottom)));
+            node.setBoundsInParent(seatBounds);
+        }
+
+        @Override
+        protected boolean onPerformActionForVirtualView(int virtualViewId, int action, @Nullable Bundle arguments) {
+            if (action == AccessibilityNodeInfoCompat.ACTION_CLICK && layout != null
+                    && virtualViewId >= 0 && virtualViewId < layout.getSeats().size()) {
+                dispatchSeatClick(virtualViewId);
+                return true;
+            }
+            return false;
         }
     }
 

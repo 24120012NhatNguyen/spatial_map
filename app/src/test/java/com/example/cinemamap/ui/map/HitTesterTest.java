@@ -47,8 +47,24 @@ public class HitTesterTest {
     }
 
     @Test
+    public void nearEdgeTouchIgnoresSeatsOutsideVisibleArea() {
+        Seat f10 = layout.findSeat("F10");
+        Seat g10 = layout.findSeat("G10");
+        // Vùng nhìn thấy bắt đầu ngay dưới F10 (F10 đã khuất hoàn toàn phía trên).
+        float visibleTop = f10.getBounds().bottom + 1f;
+        float x = f10.getBounds().centerX();
+        float y = visibleTop + 0.5f; // chạm sát mép trên của vùng nhìn thấy
+        assertEquals(f10.getIndex(), HitTester.findSeatIndex(seats, x, y, 4f));
+        assertEquals(HitTester.NO_HIT, HitTester.findSeatIndex(seats, x, y, 4f,
+                0f, visibleTop, layout.getWidth(), layout.getHeight()));
+        float yInG10 = g10.getBounds().top + 1f;
+        assertEquals(g10.getIndex(), HitTester.findSeatIndex(seats, x, yInG10, 4f,
+                0f, visibleTop, layout.getWidth(), layout.getHeight()));
+    }
+
+    @Test
     public void hitTestingIsCorrectAfterPanAndZoom() {
-        Viewport viewport = new Viewport(16f, 64f);
+        Viewport viewport = new Viewport(16f);
         viewport.setContentSize(layout.getWidth(), layout.getHeight());
         viewport.setViewSize(1080f, 1920f);
         viewport.zoomAround(700f, 800f, 3.2f);

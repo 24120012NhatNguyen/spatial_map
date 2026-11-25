@@ -14,13 +14,12 @@ public class ViewportTest {
     private static final float CONTENT_H = 800f;
     private static final float VIEW_W = 1080f;
     private static final float VIEW_H = 1920f;
-    private static final float MARGIN = 100f;
 
     private Viewport viewport;
 
     @Before
     public void setUp() {
-        viewport = new Viewport(20f, MARGIN);
+        viewport = new Viewport(20f);
         viewport.setContentSize(CONTENT_W, CONTENT_H);
         viewport.setViewSize(VIEW_W, VIEW_H);
     }
@@ -91,12 +90,38 @@ public class ViewportTest {
     }
 
     @Test
-    public void panIsLimitedWhenContentSmallerThanView() {
-        viewport.zoomAround(540f, 960f, 0.1f); // về tỷ lệ nhỏ nhất
-        viewport.panBy(5000f, 5000f);
-        assertTrue(viewport.worldToScreenX(CONTENT_W) <= VIEW_W - MARGIN + EPS);
-        assertTrue(viewport.worldToScreenY(CONTENT_H) <= VIEW_H - MARGIN + EPS);
-        assertContentVisible();
+    public void panKeepsViewCenterOverContent() {
+        float[][] drags = {{5000f, 5000f}, {-5000f, -5000f}, {5000f, -5000f}, {-5000f, 5000f}};
+        for (float zoom : new float[]{0.1f, 1f, 3f}) {
+            viewport.resetToDefault();
+            viewport.zoomAround(540f, 960f, zoom);
+            for (float[] d : drags) {
+                viewport.panBy(d[0], d[1]);
+                float cx = viewport.getWorldCenterX();
+                float cy = viewport.getWorldCenterY();
+                assertTrue(cx >= -EPS && cx <= CONTENT_W + EPS);
+                assertTrue(cy >= -EPS && cy <= CONTENT_H + EPS);
+                assertContentVisible();
+            }
+        }
+    }
+
+    @Test
+    public void pinchFromDefaultViewKeepsOffCenterSeatUnderFingers() {
+        // Kịch bản: màn hình dọc 360 × 600 dp (×2.75), chụm quanh một ghế gần mép trên
+        // bằng 20 bước nhỏ, tổng cộng 2×.
+        Viewport phone = new Viewport(33f);
+        phone.setContentSize(866f, 810f);
+        phone.setViewSize(990f, 1650f);
+        float focusX = phone.worldToScreenX(400f);
+        float focusY = phone.worldToScreenY(170f);
+        float step = (float) Math.pow(2.0, 1.0 / 20.0);
+        for (int i = 0; i < 20; i++) {
+            phone.transform(focusX, focusY, focusX, focusY, step);
+        }
+        assertEquals(2f, phone.getZoomLevel(), 1e-2f);
+        assertEquals(focusX, phone.worldToScreenX(400f), 0.5f);
+        assertEquals(focusY, phone.worldToScreenY(170f), 0.5f);
     }
 
     @Test
@@ -130,11 +155,11 @@ public class ViewportTest {
     public void movingPinchKeepsFocalPointNearPanLimit() {
         viewport.zoomAround(540f, 960f, 2f);
         viewport.panBy(-100_000f, 0f); // sát biên phải
-        float worldX = viewport.screenToWorldX(700f);
+        float worldX = viewport.screenToWorldX(300f);
         float worldY = viewport.screenToWorldY(960f);
-        // Tâm hai ngón di chuyển từ x=700 sang x=760 trong khi zoom 1.2×.
-        assertTrue(viewport.transform(700f, 960f, 760f, 960f, 1.2f));
-        assertEquals(worldX, viewport.screenToWorldX(760f), 0.5f);
+        // Tâm hai ngón di chuyển từ x=300 sang x=330 trong khi zoom 1.2×.
+        assertTrue(viewport.transform(300f, 960f, 330f, 960f, 1.2f));
+        assertEquals(worldX, viewport.screenToWorldX(330f), 0.5f);
         assertEquals(worldY, viewport.screenToWorldY(960f), 0.5f);
     }
 
@@ -164,6 +189,10 @@ public class ViewportTest {
         assertTrue(viewport.isInAvailableArea(10f, 10f));
         assertFalse(viewport.isInAvailableArea(VIEW_W - 100f, 10f));
         assertFalse(viewport.isInAvailableArea(10f, VIEW_H - 100f));
+        float[] rect = new float[4];
+        viewport.getAvailableWorldRect(rect);
+        assertEquals(viewport.screenToWorldX(VIEW_W - 400f), rect[2], EPS);
+        assertEquals(viewport.screenToWorldY(VIEW_H - 300f), rect[3], EPS);
     }
 
     @Test

@@ -13,6 +13,10 @@ package com.example.cinemamap.ui.map;
  *
  * Lớp này không phụ thuộc Android SDK để có thể kiểm thử bằng JUnit thuần.
  * Mọi phép Pan/Zoom đều đi qua đây nên giới hạn tỷ lệ và giới hạn biên luôn được áp dụng.
+ *
+ * <p>Giới hạn Pan: điểm chính giữa vùng hiển thị luôn phải nằm trên sơ đồ, nên ít nhất một nửa
+ * vùng hiển thị (theo mỗi trục) có sơ đồ – sơ đồ không bao giờ bị kéo ra khỏi màn hình. Ràng buộc
+ * này đủ rộng để zoom quanh một ghế gần mép không bị "giật" lệch tâm.</p>
  */
 public final class Viewport {
 
@@ -22,7 +26,6 @@ public final class Viewport {
     public static final float MAX_ZOOM = 4f;
 
     private final float fitPadding;
-    private final float panMargin;
 
     private float contentWidth;
     private float contentHeight;
@@ -43,13 +46,9 @@ public final class Viewport {
     /** true khi đang ở góc nhìn mặc định (chưa Pan/Zoom kể từ lần đặt lại gần nhất). */
     private boolean atDefault = true;
 
-    /**
-     * @param fitPadding khoảng đệm (px) quanh sơ đồ ở góc nhìn mặc định
-     * @param panMargin  khoảng trống tối đa (px) được phép kéo lộ ra ở mép sơ đồ
-     */
-    public Viewport(float fitPadding, float panMargin) {
+    /** @param fitPadding khoảng đệm (px) quanh sơ đồ ở góc nhìn mặc định */
+    public Viewport(float fitPadding) {
         this.fitPadding = fitPadding;
-        this.panMargin = panMargin;
     }
 
     public boolean isReady() {
@@ -249,6 +248,17 @@ public final class Viewport {
         return worldY * scale + translateY;
     }
 
+    /**
+     * Ghi vùng bản đồ thực sự nhìn thấy được (đã trừ inset) vào {@code out} = [l, t, r, b] (world).
+     * Dùng để hit-test chỉ trên các ghế người dùng nhìn thấy.
+     */
+    public void getAvailableWorldRect(float[] out) {
+        out[0] = screenToWorldX(insetLeft);
+        out[1] = screenToWorldY(insetTop);
+        out[2] = screenToWorldX(viewWidth - insetRight);
+        out[3] = screenToWorldY(viewHeight - insetBottom);
+    }
+
     /** Ghi vùng bản đồ đang nhìn thấy vào {@code out} = [left, top, right, bottom] (world). */
     public void getVisibleWorldRect(float[] out) {
         out[0] = screenToWorldX(0f);
@@ -309,11 +319,7 @@ public final class Viewport {
         maxScale = fitScale * MAX_ZOOM;
     }
 
-    /**
-     * Giới hạn Pan: sơ đồ không bao giờ bị kéo ra khỏi vùng hiển thị.
-     * Mép sơ đồ chỉ được lùi vào trong tối đa {@code panMargin} px; nếu sơ đồ nhỏ hơn vùng
-     * hiển thị thì toàn bộ sơ đồ phải nằm trong vùng đó.
-     */
+    /** Giới hạn Pan: tâm vùng hiển thị luôn nằm trên sơ đồ (xem mô tả lớp). */
     private void clampTranslation() {
         translateX = clampAxis(translateX, contentWidth * scale, insetLeft, viewWidth - insetRight);
         translateY = clampAxis(translateY, contentHeight * scale, insetTop, viewHeight - insetBottom);
@@ -323,14 +329,14 @@ public final class Viewport {
         return clamp(translate, axisMin(scaledContent, start, end), axisMax(scaledContent, start, end));
     }
 
-    // a = vị trí khi mép phải/dưới của sơ đồ chạm (end - margin)
-    // b = vị trí khi mép trái/trên của sơ đồ chạm (start + margin)
-    private float axisMin(float scaledContent, float start, float end) {
-        return Math.min(end - panMargin - scaledContent, start + panMargin);
+    // Với c = tâm vùng hiển thị:  t + W >= c  (mép phải/dưới không vượt qua tâm)
+    //                            t     <= c  (mép trái/trên không vượt qua tâm)
+    private static float axisMin(float scaledContent, float start, float end) {
+        return (start + end) * 0.5f - scaledContent;
     }
 
-    private float axisMax(float scaledContent, float start, float end) {
-        return Math.max(end - panMargin - scaledContent, start + panMargin);
+    private static float axisMax(float scaledContent, float start, float end) {
+        return (start + end) * 0.5f;
     }
 
     private static boolean isValidFactor(float factor) {

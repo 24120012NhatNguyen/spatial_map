@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- splitMotionEvents=false: cử chỉ bắt đầu ở sơ đồ được giao trọn cho sơ đồ, ngón thứ hai
+     đặt lên thẻ tóm tắt không làm cử chỉ pinch bị tách thành một lần chạm. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/floor"
-    android:orientation="vertical">
+    android:orientation="vertical"
+    android:splitMotionEvents="false">
 
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
@@ -15,56 +18,66 @@
         app:subtitleTextColor="@color/on_surface_muted"
         app:titleTextColor="@color/on_surface" />
 
-    <FrameLayout
-        android:id="@+id/map_container"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:splitMotionEvents="false">
 
         <com.example.cinemamap.ui.map.SeatMapView
             android:id="@+id/seat_map"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="match_parent"
+            android:layout_weight="1"
             android:contentDescription="@string/seat_map_description" />
 
-        <!-- Tóm tắt lựa chọn (sẽ được nâng cấp thành Expandable Bottom Sheet). -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/summary_card"
+        <!-- Cột bên phải chứa thẻ tóm tắt: sơ đồ giữ trọn chiều cao màn hình ngang. -->
+        <FrameLayout
             android:layout_width="@dimen/summary_card_side_width"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|end"
-            android:layout_margin="12dp"
-            android:clickable="true"
-            android:focusable="false"
-            app:cardBackgroundColor="@color/surface"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="6dp"
-            app:strokeWidth="0dp">
+            android:layout_height="match_parent">
 
-            <LinearLayout
+            <!-- Tóm tắt lựa chọn (sẽ được nâng cấp thành Expandable Bottom Sheet ở giai đoạn 2).
+                 Nằm ngoài vùng của sơ đồ nên không che ghế và không nhận nhầm chạm. -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/summary_card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="12dp">
+                android:layout_gravity="bottom"
+                android:layout_margin="12dp"
+                app:cardBackgroundColor="@color/surface"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="6dp"
+                app:strokeWidth="0dp">
 
-                <TextView
-                    android:id="@+id/summary_title"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textAppearance="?attr/textAppearanceTitleMedium"
-                    android:textColor="@color/on_surface" />
+                    android:orientation="vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="12dp">
 
-                <TextView
-                    android:id="@+id/summary_detail"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:ellipsize="end"
-                    android:maxLines="2"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textColor="@color/on_surface_muted" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-    </FrameLayout>
+                    <TextView
+                        android:id="@+id/summary_title"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:textAppearance="?attr/textAppearanceTitleMedium"
+                        android:textColor="@color/on_surface" />
+
+                    <!-- Cố định 2 dòng để chiều cao thẻ không đổi khi chọn ghế → sơ đồ không bị xê dịch. -->
+                    <TextView
+                        android:id="@+id/summary_detail"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:ellipsize="end"
+                        android:lines="2"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="@color/on_surface_muted" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </FrameLayout>
+    </LinearLayout>
 </LinearLayout>

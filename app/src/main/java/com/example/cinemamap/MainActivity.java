@@ -1,5 +1,6 @@
 package com.example.cinemamap;
 
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.View;
@@ -51,8 +52,14 @@ public class MainActivity extends AppCompatActivity {
         CinemaLayout layout = viewModel.getLayout();
 
         MaterialToolbar toolbar = findViewById(R.id.toolbar);
-        toolbar.setTitle(layout.getMovieTitle());
-        toolbar.setSubtitle(getString(R.string.toolbar_subtitle, layout.getRoomName(), layout.getShowtime()));
+        String details = getString(R.string.toolbar_subtitle, layout.getRoomName(), layout.getShowtime());
+        if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            // Màn hình ngang thấp: gộp vào một dòng để dành chiều cao cho sơ đồ.
+            toolbar.setTitle(getString(R.string.toolbar_subtitle, layout.getMovieTitle(), details));
+        } else {
+            toolbar.setTitle(layout.getMovieTitle());
+            toolbar.setSubtitle(details);
+        }
 
         seatMapView = findViewById(R.id.seat_map);
         seatMapView.setCinemaLayout(layout);
@@ -60,28 +67,8 @@ public class MainActivity extends AppCompatActivity {
 
         summaryTitle = findViewById(R.id.summary_title);
         summaryDetail = findViewById(R.id.summary_detail);
-        View summaryCard = findViewById(R.id.summary_card);
-        // Thẻ tóm tắt nổi trên sơ đồ: báo cho Viewport biết phần bị che để góc nhìn mặc định,
-        // giới hạn Pan và vùng nhận chạm chỉ tính trên phần sơ đồ thực sự nhìn thấy.
-        summaryCard.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
-                updateMapInsets(v, left, top, right));
 
         viewModel.getSelection().observe(this, this::renderSelection);
-    }
-
-    /**
-     * Màn hình dọc: thẻ trải ngang phía dưới → che phần đáy sơ đồ.
-     * Màn hình ngang: thẻ hẹp ở góc phải → che dải bên phải để sơ đồ giữ trọn chiều cao.
-     */
-    private void updateMapInsets(@NonNull View card, int left, int top, int right) {
-        View container = (View) card.getParent();
-        int width = container.getWidth();
-        boolean dockedAtSide = (right - left) < width * 0.6f;
-        if (dockedAtSide) {
-            seatMapView.setMapInsets(0f, 0f, Math.max(0, width - left), 0f);
-        } else {
-            seatMapView.setMapInsets(0f, 0f, 0f, Math.max(0, container.getHeight() - top));
-        }
     }
 
     private void onSeatClick(@NonNull Seat seat) {

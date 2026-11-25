@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Chiều rộng thẻ tóm tắt khi đặt ở cạnh phải (màn hình ngang). -->
+    <dimen name="summary_card_side_width">320dp</dimen>
+</resources>

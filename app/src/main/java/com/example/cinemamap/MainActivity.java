@@ -61,14 +61,27 @@ public class MainActivity extends AppCompatActivity {
         summaryTitle = findViewById(R.id.summary_title);
         summaryDetail = findViewById(R.id.summary_detail);
         View summaryCard = findViewById(R.id.summary_card);
-        // Thẻ tóm tắt nổi trên sơ đồ: báo cho Viewport biết phần bị che để góc nhìn mặc định
-        // và giới hạn Pan tính trên vùng thực sự nhìn thấy.
-        summaryCard.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            View container = (View) v.getParent();
-            seatMapView.setMapInsets(0f, 0f, 0f, Math.max(0, container.getHeight() - top));
-        });
+        // Thẻ tóm tắt nổi trên sơ đồ: báo cho Viewport biết phần bị che để góc nhìn mặc định,
+        // giới hạn Pan và vùng nhận chạm chỉ tính trên phần sơ đồ thực sự nhìn thấy.
+        summaryCard.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                updateMapInsets(v, left, top, right));
 
         viewModel.getSelection().observe(this, this::renderSelection);
+    }
+
+    /**
+     * Màn hình dọc: thẻ trải ngang phía dưới → che phần đáy sơ đồ.
+     * Màn hình ngang: thẻ hẹp ở góc phải → che dải bên phải để sơ đồ giữ trọn chiều cao.
+     */
+    private void updateMapInsets(@NonNull View card, int left, int top, int right) {
+        View container = (View) card.getParent();
+        int width = container.getWidth();
+        boolean dockedAtSide = (right - left) < width * 0.6f;
+        if (dockedAtSide) {
+            seatMapView.setMapInsets(0f, 0f, Math.max(0, width - left), 0f);
+        } else {
+            seatMapView.setMapInsets(0f, 0f, 0f, Math.max(0, container.getHeight() - top));
+        }
     }
 
     private void onSeatClick(@NonNull Seat seat) {

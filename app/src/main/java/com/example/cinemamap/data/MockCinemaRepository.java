@@ -19,7 +19,7 @@ public final class MockCinemaRepository {
     public static final float ROW_PITCH = SEAT_SIZE + SEAT_GAP;
     public static final float AISLE_WIDTH = 44f;
     public static final float SIDE_MARGIN = 56f;
-    public static final float ZONE_HEADER_HEIGHT = 40f;
+    public static final float ZONE_HEADER_HEIGHT = 46f;
     public static final float ZONE_PADDING = 10f;
     public static final float ZONE_GAP = 18f;
 

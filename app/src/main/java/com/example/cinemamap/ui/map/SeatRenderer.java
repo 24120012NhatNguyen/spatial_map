@@ -30,6 +30,8 @@ import java.util.List;
  */
 final class SeatRenderer {
 
+    private static final String SCREEN_LABEL = "MÀN HÌNH";
+    private static final String ENTRANCE_LABEL = "LỐI VÀO";
     private static final float SEAT_TEXT_SIZE = 13f;
     private static final float ZONE_LABEL_SIZE = 16f;
     private static final float ROW_LABEL_SIZE = 14f;
@@ -37,6 +39,9 @@ final class SeatRenderer {
     /** Kích thước tối thiểu (dp trên màn hình) để nhãn phân khu/hàng vẫn đọc được khi thu nhỏ. */
     private static final float MIN_ZONE_LABEL_DP = 11f;
     private static final float MIN_ROW_LABEL_DP = 9f;
+    private static final float MIN_SMALL_LABEL_DP = 8f;
+    /** Cỡ chữ tối đa (world) cho nhãn "MÀN HÌNH"/"LỐI VÀO" để không đè lên ghế. */
+    private static final float MAX_SMALL_LABEL_SIZE = 18f;
     private static final int ZONE_FILL_ALPHA = 0x16;
     private static final int ZONE_STROKE_ALPHA = 0x66;
 
@@ -69,7 +74,7 @@ final class SeatRenderer {
     /** Tỷ lệ baseline/cỡ chữ – dùng khi cỡ chữ nhãn thay đổi theo mức zoom. */
     private final float zoneLabelBaselineRatio;
     private final float rowLabelBaselineRatio;
-    private final float smallLabelBaseline;
+    private final float smallLabelBaselineRatio;
 
     private final RectF tmpRect = new RectF();
     private final Path screenPath = new Path();
@@ -79,6 +84,9 @@ final class SeatRenderer {
     private RectF[] seatRects = new RectF[0];
     private RectF[] zoneRects = new RectF[0];
     private int[] zoneColors = new int[0];
+    /** Cỡ chữ nhãn phân khu đã tính cho {@link #cachedZoneMinSize}; chỉ đo lại khi mức zoom đổi. */
+    private float[] zoneLabelSizes = new float[0];
+    private float cachedZoneMinSize = Float.NaN;
     private RectF[] aisleRects = new RectF[0];
     private float screenLabelX;
     private float screenLabelY;
@@ -140,7 +148,7 @@ final class SeatRenderer {
         smallLabelPaint.setTextAlign(Paint.Align.CENTER);
         smallLabelPaint.setTextSize(SMALL_LABEL_SIZE);
         smallLabelPaint.setLetterSpacing(0.15f);
-        smallLabelBaseline = centeredBaseline(smallLabelPaint);
+        smallLabelBaselineRatio = centeredBaseline(smallLabelPaint) / SMALL_LABEL_SIZE;
 
         screenPaint.setStyle(Paint.Style.STROKE);
         screenPaint.setStrokeWidth(6f);
@@ -159,6 +167,8 @@ final class SeatRenderer {
         List<Zone> zones = layout.getZones();
         zoneRects = new RectF[zones.size()];
         zoneColors = new int[zones.size()];
+        zoneLabelSizes = new float[zones.size()];
+        cachedZoneMinSize = Float.NaN;
         for (int i = 0; i < zoneRects.length; i++) {
             zoneRects[i] = toRectF(zones.get(i).getBounds());
             zoneColors[i] = typeColor(zones.get(i).getType());
@@ -204,11 +214,16 @@ final class SeatRenderer {
      */
     void draw(Canvas canvas, CinemaLayout layout, boolean[] selected, float[] visible,
               float scale, float density, boolean showNumbers) {
+        float smallLabelSize = Math.min(Math.max(SMALL_LABEL_SIZE, MIN_SMALL_LABEL_DP * density / scale),
+                MAX_SMALL_LABEL_SIZE);
+        smallLabelPaint.setTextSize(smallLabelSize);
+        float smallBaseline = smallLabelSize * smallLabelBaselineRatio;
+
         drawZones(canvas);
-        drawAisles(canvas);
-        drawScreen(canvas);
+        drawAisles(canvas, smallBaseline);
+        drawScreen(canvas, smallBaseline);
         drawZoneLabels(canvas, layout.getZones(), MIN_ZONE_LABEL_DP * density / scale);
-        drawRowLabels(canvas, layout.getRowLabels(), MIN_ROW_LABEL_DP * density / scale);
+        drawRowLabels(canvas, layout.getRowLabels(), MIN_ROW_LABEL_DP * density / scale, visible);
 
         List<Seat> seats = layout.getSeats();
         for (int i = 0, n = seats.size(); i < n; i++) {
@@ -235,45 +250,65 @@ final class SeatRenderer {
      * tối thiểu trên màn hình) và không vượt quá vùng tiêu đề của phân khu.
      */
     private void drawZoneLabels(Canvas canvas, List<Zone> zones, float minSize) {
+        if (minSize != cachedZoneMinSize) {
+            computeZoneLabelSizes(zones, minSize);
+        }
         for (int i = 0, n = zones.size(); i < n; i++) {
             Zone zone = zones.get(i);
             WorldRect header = zone.getHeaderBounds();
-            float size = Math.min(Math.max(ZONE_LABEL_SIZE, minSize), header.height() * 0.62f);
+            float size = zoneLabelSizes[i];
             zoneLabelPaint.setTextSize(size);
-            float width = zoneLabelPaint.measureText(zone.getLabel());
-            float maxWidth = header.width() * 0.96f;
-            if (width > maxWidth) {
-                size *= maxWidth / width;
-                zoneLabelPaint.setTextSize(size);
-            }
             zoneLabelPaint.setColor(zoneColors[i]);
             canvas.drawText(zone.getLabel(), header.centerX(),
                     header.centerY() + size * zoneLabelBaselineRatio, zoneLabelPaint);
         }
     }
 
-    private void drawAisles(Canvas canvas) {
+    private void drawAisles(Canvas canvas, float labelBaseline) {
         for (RectF aisle : aisleRects) {
             canvas.drawRect(aisle, aislePaint);
             float cx = aisle.centerX();
             canvas.drawLine(cx, aisle.top + 6f, cx, aisle.bottom - 30f, aisleLinePaint);
-            canvas.drawText("LỐI VÀO", cx, aisle.bottom - 12f + smallLabelBaseline, smallLabelPaint);
+            canvas.drawText(ENTRANCE_LABEL, cx, aisle.bottom - 12f + labelBaseline, smallLabelPaint);
         }
     }
 
-    private void drawScreen(Canvas canvas) {
+    private void drawScreen(Canvas canvas, float labelBaseline) {
         canvas.drawPath(screenGlowPath, screenGlowPaint);
         canvas.drawPath(screenPath, screenPaint);
-        canvas.drawText("MÀN HÌNH", screenLabelX, screenLabelY + smallLabelBaseline, smallLabelPaint);
+        canvas.drawText(SCREEN_LABEL, screenLabelX, screenLabelY + labelBaseline, smallLabelPaint);
     }
 
-    private void drawRowLabels(Canvas canvas, List<RowLabel> labels, float minSize) {
+    /** Đo lại cỡ chữ vừa vùng tiêu đề – chỉ chạy khi mức zoom (cỡ tối thiểu) thay đổi. */
+    private void computeZoneLabelSizes(List<Zone> zones, float minSize) {
+        for (int i = 0, n = zones.size(); i < n; i++) {
+            Zone zone = zones.get(i);
+            WorldRect header = zone.getHeaderBounds();
+            float size = Math.min(Math.max(ZONE_LABEL_SIZE, minSize), header.height() * 0.66f);
+            zoneLabelPaint.setTextSize(size);
+            float width = zoneLabelPaint.measureText(zone.getLabel());
+            float maxWidth = header.width() * 0.96f;
+            if (width > maxWidth) {
+                size *= maxWidth / width;
+            }
+            zoneLabelSizes[i] = size;
+        }
+        cachedZoneMinSize = minSize;
+    }
+
+    private void drawRowLabels(Canvas canvas, List<RowLabel> labels, float minSize, float[] visible) {
         float size = Math.min(Math.max(ROW_LABEL_SIZE, minSize), MockCinemaRepository.ROW_PITCH * 0.6f);
         rowLabelPaint.setTextSize(size);
         float baseline = size * rowLabelBaselineRatio;
+        float half = size; // nửa bề rộng/chiều cao ước lượng của một ký tự nhãn hàng
         for (int i = 0, n = labels.size(); i < n; i++) {
             RowLabel label = labels.get(i);
-            canvas.drawText(label.getText(), label.getX(), label.getCenterY() + baseline, rowLabelPaint);
+            float x = label.getX();
+            float y = label.getCenterY();
+            if (x + half < visible[0] || x - half > visible[2] || y + half < visible[1] || y - half > visible[3]) {
+                continue; // Culling nhãn nằm ngoài màn hình.
+            }
+            canvas.drawText(label.getText(), x, y + baseline, rowLabelPaint);
         }
     }
 

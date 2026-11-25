@@ -40,6 +40,8 @@ public final class Viewport {
     private float scale = 1f;
     private float translateX;
     private float translateY;
+    /** true khi đang ở góc nhìn mặc định (chưa Pan/Zoom kể từ lần đặt lại gần nhất). */
+    private boolean atDefault = true;
 
     /**
      * @param fitPadding khoảng đệm (px) quanh sơ đồ ở góc nhìn mặc định
@@ -83,7 +85,7 @@ public final class Viewport {
         if (!isReady()) {
             return;
         }
-        if (hadState) {
+        if (hadState && !atDefault) {
             restore(zoom, centerX, centerY);
         } else {
             resetToDefault();
@@ -97,7 +99,12 @@ public final class Viewport {
         insetRight = Math.max(0f, right);
         insetBottom = Math.max(0f, bottom);
         recomputeScaleLimits();
-        if (isReady()) {
+        if (!isReady()) {
+            return;
+        }
+        if (atDefault) {
+            resetToDefault();
+        } else {
             scale = clamp(scale, minScale, maxScale);
             clampTranslation();
         }
@@ -109,6 +116,7 @@ public final class Viewport {
         translateX = availableCenterX() - contentWidth * scale * 0.5f;
         translateY = availableCenterY() - contentHeight * scale * 0.5f;
         clampTranslation();
+        atDefault = true;
     }
 
     /**
@@ -120,6 +128,7 @@ public final class Viewport {
         translateX = availableCenterX() - worldCenterX * scale;
         translateY = availableCenterY() - worldCenterY * scale;
         clampTranslation();
+        atDefault = false;
     }
 
     /**
@@ -133,7 +142,11 @@ public final class Viewport {
         translateX += dx;
         translateY += dy;
         clampTranslation();
-        return oldX != translateX || oldY != translateY;
+        boolean moved = oldX != translateX || oldY != translateY;
+        if (moved) {
+            atDefault = false;
+        }
+        return moved;
     }
 
     /**
@@ -153,8 +166,12 @@ public final class Viewport {
         float k = newScale / scale;
         translateX = focusX - (focusX - translateX) * k;
         translateY = focusY - (focusY - translateY) * k;
+        boolean changed = newScale != scale;
         scale = newScale;
         clampTranslation();
+        if (changed) {
+            atDefault = false;
+        }
     }
 
     public float screenToWorldX(float screenX) {
@@ -203,6 +220,10 @@ public final class Viewport {
 
     public float getFitScale() {
         return fitScale;
+    }
+
+    public boolean isAtDefault() {
+        return atDefault;
     }
 
     /** Mức zoom tương đối: 1 = vừa khít màn hình. */

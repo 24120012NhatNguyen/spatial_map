@@ -19,7 +19,7 @@ public final class MockCinemaRepository {
     public static final float ROW_PITCH = SEAT_SIZE + SEAT_GAP;
     public static final float AISLE_WIDTH = 44f;
     public static final float SIDE_MARGIN = 56f;
-    public static final float ZONE_HEADER_HEIGHT = 34f;
+    public static final float ZONE_HEADER_HEIGHT = 40f;
     public static final float ZONE_PADDING = 10f;
     public static final float ZONE_GAP = 18f;
 
@@ -80,7 +80,10 @@ public final class MockCinemaRepository {
                                  float[] blockX, float seatsLeft, float seatsRight, float worldWidth,
                                  Random random, float bookedRate,
                                  List<Seat> seats, List<Zone> zones, List<RowLabel> rowLabels) {
-        WorldRect header = new WorldRect(seatsLeft, top, seatsRight, top + ZONE_HEADER_HEIGHT);
+        // Nhãn phân khu nằm phía trên khối ghế giữa, không đè lên lối đi dọc.
+        float headerLeft = blockX[1];
+        float headerRight = blockX[1] + blockWidth(BLOCK_SEATS[1]);
+        WorldRect header = new WorldRect(headerLeft, top, headerRight, top + ZONE_HEADER_HEIGHT);
         float rowTop = top + ZONE_HEADER_HEIGHT;
         for (String row : rows) {
             int number = 1;

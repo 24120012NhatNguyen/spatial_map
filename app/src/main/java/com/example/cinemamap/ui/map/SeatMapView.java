@@ -51,6 +51,7 @@ public class SeatMapView extends View {
     private final GestureDetector gestureDetector;
     private final OverScroller scroller;
     private final float[] visibleWorld = new float[4];
+    private final float[] panBounds = new float[4];
 
     @Nullable
     private CinemaLayout layout;
@@ -62,6 +63,8 @@ public class SeatMapView extends View {
     private float lastFocusY;
     private int lastFlingX;
     private int lastFlingY;
+    /** true nếu chuỗi chạm hiện tại đã có pinch – khi đó không fling lúc nhấc tay. */
+    private boolean pinchedInGesture;
     @Nullable
     private SavedState pendingState;
 
@@ -84,6 +87,9 @@ public class SeatMapView extends View {
         scaleDetector.setQuickScaleEnabled(false);
         gestureDetector = new GestureDetector(context, new GestureListener());
         gestureDetector.setIsLongpressEnabled(false);
+        // SimpleOnGestureListener cũng là OnDoubleTapListener: nếu để mặc định, lần chạm thứ hai
+        // của một cặp chạm nhanh sẽ đi vào onDoubleTap thay vì onSingleTapUp và bị bỏ qua.
+        gestureDetector.setOnDoubleTapListener(null);
         setClickable(true);
         setFocusable(true);
     }
@@ -120,8 +126,9 @@ public class SeatMapView extends View {
 
     /** Vùng bị che bởi các thành phần nổi phía trên sơ đồ (px). */
     public void setMapInsets(float left, float top, float right, float bottom) {
-        viewport.setInsets(left, top, right, bottom);
-        invalidate();
+        if (viewport.setInsets(left, top, right, bottom)) {
+            invalidate();
+        }
     }
 
     @NonNull
@@ -153,7 +160,7 @@ public class SeatMapView extends View {
         int save = canvas.save();
         canvas.translate(viewport.getTranslateX(), viewport.getTranslateY());
         canvas.scale(scale, scale);
-        renderer.draw(canvas, layout, selectedFlags, visibleWorld, showNumbers);
+        renderer.draw(canvas, layout, selectedFlags, visibleWorld, scale, density, showNumbers);
         canvas.restoreToCount(save);
     }
 
@@ -168,6 +175,7 @@ public class SeatMapView extends View {
         }
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
             scroller.forceFinished(true);
+            pinchedInGesture = false;
             ViewParent parent = getParent();
             if (parent != null) {
                 parent.requestDisallowInterceptTouchEvent(true);
@@ -188,20 +196,17 @@ public class SeatMapView extends View {
         if (scroller.computeScrollOffset()) {
             int x = scroller.getCurrX();
             int y = scroller.getCurrY();
-            boolean moved = viewport.panBy(x - lastFlingX, y - lastFlingY);
+            viewport.panBy(x - lastFlingX, y - lastFlingY);
             lastFlingX = x;
             lastFlingY = y;
-            if (moved) {
-                postInvalidateOnAnimation();
-            } else {
-                scroller.forceFinished(true); // Đã chạm biên: dừng fling, không vẽ lại thừa.
-            }
+            // Scroller đã được giới hạn theo biên Pan nên sẽ tự dừng ở biên.
+            postInvalidateOnAnimation();
         }
     }
 
     private void handleTap(float screenX, float screenY) {
-        if (layout == null) {
-            return;
+        if (layout == null || !viewport.isInAvailableArea(screenX, screenY)) {
+            return; // Bỏ qua chạm vào vùng bị thẻ tóm tắt/bottom sheet che.
         }
         // Đổi điểm chạm sang tọa độ world – đúng với mọi mức Pan/Zoom.
         float worldX = viewport.screenToWorldX(screenX);
@@ -217,6 +222,7 @@ public class SeatMapView extends View {
         @Override
         public boolean onScaleBegin(@NonNull ScaleGestureDetector detector) {
             scroller.forceFinished(true);
+            pinchedInGesture = true;
             lastFocusX = detector.getFocusX();
             lastFocusY = detector.getFocusY();
             return true;
@@ -226,13 +232,13 @@ public class SeatMapView extends View {
         public boolean onScale(@NonNull ScaleGestureDetector detector) {
             float focusX = detector.getFocusX();
             float focusY = detector.getFocusY();
-            // Di chuyển theo tâm hai ngón rồi zoom quanh tâm đó: điểm bản đồ dưới hai ngón tay
-            // luôn "dính" theo ngón tay.
-            viewport.panBy(focusX - lastFocusX, focusY - lastFocusY);
-            viewport.zoomAround(focusX, focusY, detector.getScaleFactor());
+            // Điểm bản đồ dưới tâm hai ngón tay luôn "dính" theo tâm đó khi vừa zoom vừa di chuyển.
+            boolean changed = viewport.transform(lastFocusX, lastFocusY, focusX, focusY, detector.getScaleFactor());
             lastFocusX = focusX;
             lastFocusY = focusY;
-            postInvalidateOnAnimation();
+            if (changed) {
+                postInvalidateOnAnimation();
+            }
             return true;
         }
     }
@@ -256,13 +262,18 @@ public class SeatMapView extends View {
 
         @Override
         public boolean onFling(@Nullable MotionEvent e1, @NonNull MotionEvent e2, float velocityX, float velocityY) {
-            if (scaleDetector.isInProgress()) {
-                return false;
+            if (scaleDetector.isInProgress() || pinchedInGesture) {
+                return false; // Không fling khi vừa kết thúc pinch.
             }
+            // Giới hạn scroller theo đúng khoảng Pan còn lại để fling dừng tự nhiên ở biên.
+            viewport.getTranslationBounds(panBounds);
+            float tx = viewport.getTranslateX();
+            float ty = viewport.getTranslateY();
             lastFlingX = 0;
             lastFlingY = 0;
             scroller.fling(0, 0, Math.round(velocityX), Math.round(velocityY),
-                    Integer.MIN_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE);
+                    Math.round(panBounds[0] - tx), Math.round(panBounds[1] - tx),
+                    Math.round(panBounds[2] - ty), Math.round(panBounds[3] - ty));
             postInvalidateOnAnimation();
             return true;
         }
@@ -320,7 +331,8 @@ public class SeatMapView extends View {
         invalidate();
     }
 
-    static class SavedState extends BaseSavedState {
+    /** Phải là public để Parcel truy cập được CREATOR bằng reflection khi khôi phục tiến trình. */
+    public static class SavedState extends BaseSavedState {
         boolean hasViewport;
         boolean atDefault;
         float zoomLevel;

@@ -126,6 +126,59 @@ public class ViewportTest {
         assertTrue(viewport.isAtDefault());
     }
 
+    @Test
+    public void movingPinchKeepsFocalPointNearPanLimit() {
+        viewport.zoomAround(540f, 960f, 2f);
+        viewport.panBy(-100_000f, 0f); // sát biên phải
+        float worldX = viewport.screenToWorldX(700f);
+        float worldY = viewport.screenToWorldY(960f);
+        // Tâm hai ngón di chuyển từ x=700 sang x=760 trong khi zoom 1.2×.
+        assertTrue(viewport.transform(700f, 960f, 760f, 960f, 1.2f));
+        assertEquals(worldX, viewport.screenToWorldX(760f), 0.5f);
+        assertEquals(worldY, viewport.screenToWorldY(960f), 0.5f);
+    }
+
+    @Test
+    public void zoomAtLimitReportsNoChange() {
+        viewport.zoomAround(540f, 960f, 100f);
+        assertFalse(viewport.zoomAround(540f, 960f, 1.5f));
+        assertFalse(viewport.transform(540f, 960f, 540f, 960f, 1.5f));
+    }
+
+    @Test
+    public void insetsKeepCameraAfterUserMovedMap() {
+        viewport.zoomAround(300f, 700f, 2f);
+        float zoom = viewport.getZoomLevel();
+        float cx = viewport.getWorldCenterX();
+        float cy = viewport.getWorldCenterY();
+        assertTrue(viewport.setInsets(0f, 0f, 0f, 300f));
+        assertEquals(zoom, viewport.getZoomLevel(), EPS);
+        assertEquals(cx, viewport.getWorldCenterX(), 1f);
+        assertEquals(cy, viewport.getWorldCenterY(), 1f);
+        assertFalse("unchanged insets", viewport.setInsets(0f, 0f, 0f, 300f));
+    }
+
+    @Test
+    public void availableAreaExcludesInsets() {
+        viewport.setInsets(0f, 0f, 400f, 300f);
+        assertTrue(viewport.isInAvailableArea(10f, 10f));
+        assertFalse(viewport.isInAvailableArea(VIEW_W - 100f, 10f));
+        assertFalse(viewport.isInAvailableArea(10f, VIEW_H - 100f));
+    }
+
+    @Test
+    public void translationBoundsMatchClamping() {
+        viewport.zoomAround(540f, 960f, 3f);
+        float[] bounds = new float[4];
+        viewport.getTranslationBounds(bounds);
+        viewport.panBy(-100_000f, -100_000f);
+        assertEquals(bounds[0], viewport.getTranslateX(), EPS);
+        assertEquals(bounds[2], viewport.getTranslateY(), EPS);
+        viewport.panBy(100_000f, 100_000f);
+        assertEquals(bounds[1], viewport.getTranslateX(), EPS);
+        assertEquals(bounds[3], viewport.getTranslateY(), EPS);
+    }
+
     private void assertContentVisible() {
         float left = viewport.worldToScreenX(0f);
         float right = viewport.worldToScreenX(CONTENT_W);

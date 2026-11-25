@@ -92,22 +92,37 @@ public final class Viewport {
         }
     }
 
-    /** Vùng bị che (thanh công cụ, bottom sheet...) – không tính vào vùng hiển thị sơ đồ. */
-    public void setInsets(float left, float top, float right, float bottom) {
-        insetLeft = Math.max(0f, left);
-        insetTop = Math.max(0f, top);
-        insetRight = Math.max(0f, right);
-        insetBottom = Math.max(0f, bottom);
+    /**
+     * Vùng bị che (thẻ tóm tắt, bottom sheet...) – không tính vào vùng hiển thị sơ đồ.
+     * Nếu người dùng đã Pan/Zoom, giữ nguyên mức zoom tương đối và điểm bản đồ ở tâm.
+     *
+     * @return true nếu giá trị inset thay đổi
+     */
+    public boolean setInsets(float left, float top, float right, float bottom) {
+        left = Math.max(0f, left);
+        top = Math.max(0f, top);
+        right = Math.max(0f, right);
+        bottom = Math.max(0f, bottom);
+        if (left == insetLeft && top == insetTop && right == insetRight && bottom == insetBottom) {
+            return false;
+        }
+        boolean keepCamera = isReady() && !atDefault;
+        float zoom = keepCamera ? getZoomLevel() : 1f;
+        float centerX = keepCamera ? getWorldCenterX() : 0f;
+        float centerY = keepCamera ? getWorldCenterY() : 0f;
+        insetLeft = left;
+        insetTop = top;
+        insetRight = right;
+        insetBottom = bottom;
         recomputeScaleLimits();
-        if (!isReady()) {
-            return;
+        if (isReady()) {
+            if (keepCamera) {
+                restore(zoom, centerX, centerY);
+            } else {
+                resetToDefault();
+            }
         }
-        if (atDefault) {
-            resetToDefault();
-        } else {
-            scale = clamp(scale, minScale, maxScale);
-            clampTranslation();
-        }
+        return true;
     }
 
     /** Góc nhìn mặc định: toàn bộ sơ đồ vừa khít và nằm giữa vùng hiển thị. */
@@ -158,20 +173,64 @@ public final class Viewport {
      *   t'  = focus - (focus - t) * k
      * </pre>
      */
-    public void zoomAround(float focusX, float focusY, float factor) {
-        if (factor <= 0f || Float.isNaN(factor) || Float.isInfinite(factor)) {
-            return;
+    public boolean zoomAround(float focusX, float focusY, float factor) {
+        if (!isValidFactor(factor)) {
+            return false;
         }
-        float newScale = clamp(scale * factor, minScale, maxScale);
-        float k = newScale / scale;
-        translateX = focusX - (focusX - translateX) * k;
-        translateY = focusY - (focusY - translateY) * k;
-        boolean changed = newScale != scale;
-        scale = newScale;
+        return transform(focusX, focusY, focusX, focusY, factor);
+    }
+
+    /**
+     * Phép biến đổi của cử chỉ hai ngón: điểm bản đồ nằm dưới tâm hai ngón ở khung trước
+     * ({@code previousFocus}) được đưa tới tâm hai ngón hiện tại ({@code focus}) với tỷ lệ mới.
+     * Tính translation từ cả hai tiêu điểm rồi mới giới hạn biên MỘT lần, nên tiêu điểm
+     * không bị lệch khi đang ở sát biên.
+     * <pre>
+     *   world = (previousFocus - t) / s
+     *   s'    = clamp(s * factor)
+     *   t'    = clampPan(focus - world * s')
+     * </pre>
+     *
+     * @return true nếu góc nhìn thay đổi (để chỉ vẽ lại khi cần)
+     */
+    public boolean transform(float previousFocusX, float previousFocusY, float focusX, float focusY, float factor) {
+        if (!isValidFactor(factor)) {
+            factor = 1f;
+        }
+        float worldX = screenToWorldX(previousFocusX);
+        float worldY = screenToWorldY(previousFocusY);
+        float oldScale = scale;
+        float oldX = translateX;
+        float oldY = translateY;
+        scale = clamp(scale * factor, minScale, maxScale);
+        translateX = focusX - worldX * scale;
+        translateY = focusY - worldY * scale;
         clampTranslation();
+        boolean changed = scale != oldScale || translateX != oldX || translateY != oldY;
         if (changed) {
             atDefault = false;
         }
+        return changed;
+    }
+
+    /** Điểm màn hình có nằm trong vùng hiển thị sơ đồ (không bị inset che) hay không. */
+    public boolean isInAvailableArea(float screenX, float screenY) {
+        return screenX >= insetLeft && screenX <= viewWidth - insetRight
+                && screenY >= insetTop && screenY <= viewHeight - insetBottom;
+    }
+
+    /** Ghi khoảng translation hợp lệ ở tỷ lệ hiện tại vào {@code out} = [minX, maxX, minY, maxY]. */
+    public void getTranslationBounds(float[] out) {
+        float scaledWidth = contentWidth * scale;
+        float scaledHeight = contentHeight * scale;
+        float startX = insetLeft;
+        float endX = viewWidth - insetRight;
+        float startY = insetTop;
+        float endY = viewHeight - insetBottom;
+        out[0] = axisMin(scaledWidth, startX, endX);
+        out[1] = axisMax(scaledWidth, startX, endX);
+        out[2] = axisMin(scaledHeight, startY, endY);
+        out[3] = axisMax(scaledHeight, startY, endY);
     }
 
     public float screenToWorldX(float screenX) {
@@ -261,9 +320,21 @@ public final class Viewport {
     }
 
     private float clampAxis(float translate, float scaledContent, float start, float end) {
-        float a = end - panMargin - scaledContent; // mép phải/dưới của sơ đồ chạm (end - margin)
-        float b = start + panMargin;               // mép trái/trên của sơ đồ chạm (start + margin)
-        return clamp(translate, Math.min(a, b), Math.max(a, b));
+        return clamp(translate, axisMin(scaledContent, start, end), axisMax(scaledContent, start, end));
+    }
+
+    // a = vị trí khi mép phải/dưới của sơ đồ chạm (end - margin)
+    // b = vị trí khi mép trái/trên của sơ đồ chạm (start + margin)
+    private float axisMin(float scaledContent, float start, float end) {
+        return Math.min(end - panMargin - scaledContent, start + panMargin);
+    }
+
+    private float axisMax(float scaledContent, float start, float end) {
+        return Math.max(end - panMargin - scaledContent, start + panMargin);
+    }
+
+    private static boolean isValidFactor(float factor) {
+        return factor > 0f && !Float.isNaN(factor) && !Float.isInfinite(factor);
     }
 
     private float availableCenterX() {

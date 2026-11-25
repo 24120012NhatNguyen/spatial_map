@@ -102,7 +102,7 @@ public final class MockCinemaRepository {
             rowTop += ROW_PITCH;
         }
         float bottom = rowTop - SEAT_GAP + ZONE_PADDING;
-        String label = title + " · " + formatPrice(type.getPrice());
+        String label = title + " · " + PriceFormatter.format(type.getPrice());
         zones.add(new Zone(type, label,
                 new WorldRect(seatsLeft - ZONE_PADDING, top, seatsRight + ZONE_PADDING, bottom), header));
         return bottom + ZONE_GAP;
@@ -121,18 +121,5 @@ public final class MockCinemaRepository {
 
     static float blockWidth(int seatCount) {
         return seatCount * SEAT_SIZE + (seatCount - 1) * SEAT_GAP;
-    }
-
-    private static String formatPrice(long price) {
-        // Định dạng kiểu Việt Nam: 75.000đ (không phụ thuộc Locale của máy).
-        String digits = Long.toString(price);
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < digits.length(); i++) {
-            if (i > 0 && (digits.length() - i) % 3 == 0) {
-                sb.append('.');
-            }
-            sb.append(digits.charAt(i));
-        }
-        return sb.append('đ').toString();
     }
 }

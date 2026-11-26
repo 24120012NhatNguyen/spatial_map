@@ -10,6 +10,7 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 
+import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
 import com.example.cinemamap.R;
@@ -17,6 +18,7 @@ import com.example.cinemamap.data.CinemaLayout;
 import com.example.cinemamap.data.MockCinemaRepository;
 import com.example.cinemamap.data.RowLabel;
 import com.example.cinemamap.data.Seat;
+import com.example.cinemamap.data.SeatStatus;
 import com.example.cinemamap.data.SeatType;
 import com.example.cinemamap.data.WorldRect;
 import com.example.cinemamap.data.Zone;
@@ -44,6 +46,14 @@ final class SeatRenderer {
     private static final float MAX_SMALL_LABEL_SIZE = 18f;
     private static final int ZONE_FILL_ALPHA = 0x16;
     private static final int ZONE_STROKE_ALPHA = 0x66;
+    /** Độ trong suốt của ghế không khớp bộ lọc (bị làm mờ). */
+    private static final int DIMMED_ALPHA = 0x3A;
+    /** Ghế đang chọn nhưng không khớp bộ lọc: mờ nhẹ hơn để vẫn nhận ra dấu ✓. */
+    private static final int DIMMED_SELECTED_ALPHA = 0x80;
+    /** Vòng sáng định vị ghế: độ dày và khoảng nở tối đa (dp trên màn hình). */
+    private static final float HIGHLIGHT_STROKE_DP = 3f;
+    private static final float HIGHLIGHT_GAP_DP = 3f;
+    private static final float HIGHLIGHT_PULSE_DP = 7f;
 
     private final int standardColor;
     private final int vipColor;
@@ -69,6 +79,7 @@ final class SeatRenderer {
     private final Paint smallLabelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint screenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint screenGlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private final float seatTextBaseline;
     /** Tỷ lệ baseline/cỡ chữ – dùng khi cỡ chữ nhãn thay đổi theo mức zoom. */
@@ -155,6 +166,9 @@ final class SeatRenderer {
         screenPaint.setStrokeCap(Paint.Cap.ROUND);
         screenPaint.setColor(screenColor);
         screenGlowPaint.setStyle(Paint.Style.FILL);
+
+        highlightPaint.setStyle(Paint.Style.STROKE);
+        highlightPaint.setColor(ContextCompat.getColor(context, R.color.seat_highlight));
     }
 
     /** Tính sẵn hình học (RectF, Path, Shader) cho layout. Gọi một lần khi đổi layout. */
@@ -207,12 +221,13 @@ final class SeatRenderer {
      * Vẽ toàn bộ sơ đồ.
      *
      * @param selected     cờ "đang chọn" theo chỉ số ghế
+     * @param dimmed       cờ "bị bộ lọc làm mờ" theo chỉ số ghế
      * @param visible      vùng world đang hiển thị [l, t, r, b] – ghế ngoài vùng này bị bỏ qua
      * @param scale        tỷ lệ hiện tại (px / đơn vị world)
      * @param density      mật độ màn hình (px / dp)
      * @param showNumbers  có vẽ số ghế hay không (ẩn khi thu nhỏ để sơ đồ gọn và vẽ nhanh hơn)
      */
-    void draw(Canvas canvas, CinemaLayout layout, boolean[] selected, float[] visible,
+    void draw(Canvas canvas, CinemaLayout layout, boolean[] selected, boolean[] dimmed, float[] visible,
               float scale, float density, boolean showNumbers) {
         float smallLabelSize = Math.min(Math.max(SMALL_LABEL_SIZE, MIN_SMALL_LABEL_DP * density / scale),
                 MAX_SMALL_LABEL_SIZE);
@@ -231,8 +246,36 @@ final class SeatRenderer {
             if (r.right < visible[0] || r.left > visible[2] || r.bottom < visible[1] || r.top > visible[3]) {
                 continue; // Culling: không vẽ ghế nằm ngoài màn hình.
             }
-            drawSeat(canvas, seats.get(i), r, selected[i], showNumbers);
+            Seat seat = seats.get(i);
+            boolean faded = dimmed[i];
+            drawSeatGlyph(canvas, r, seat.getType(), seat.getStatus(), selected[i], faded,
+                    showNumbers && !faded ? seat.getNumberLabel() : null);
         }
+    }
+
+    /**
+     * Vòng sáng nhấp nháy quanh ghế vừa được định vị (từ Bottom Sheet hoặc tìm kiếm).
+     *
+     * @param progress tiến độ hiệu ứng 0..1 – vòng nở ra/thu vào rồi mờ dần
+     */
+    void drawHighlight(Canvas canvas, int seatIndex, float progress, float scale, float density) {
+        if (seatIndex < 0 || seatIndex >= seatRects.length) {
+            return;
+        }
+        drawHighlightRing(canvas, seatRects[seatIndex], progress, scale, density);
+    }
+
+    /** Vòng sáng quanh một hình chữ nhật world; dùng chung cho sơ đồ và bảng chú thích. */
+    void drawHighlightRing(Canvas canvas, RectF r, float progress, float scale, float density) {
+        float dpToWorld = density / scale;
+        float pulse = (float) Math.abs(Math.sin(progress * Math.PI * 3.0));
+        float outset = (HIGHLIGHT_GAP_DP + HIGHLIGHT_PULSE_DP * pulse) * dpToWorld;
+        float fade = 1f - progress * progress * progress;
+        highlightPaint.setStrokeWidth(HIGHLIGHT_STROKE_DP * dpToWorld);
+        highlightPaint.setAlpha(Math.round(255 * fade));
+        tmpRect.set(r.left - outset, r.top - outset, r.right + outset, r.bottom + outset);
+        float radius = r.height() * 0.24f + outset;
+        canvas.drawRoundRect(tmpRect, radius, radius, highlightPaint);
     }
 
     private void drawZones(Canvas canvas) {
@@ -312,74 +355,85 @@ final class SeatRenderer {
         }
     }
 
-    private void drawSeat(Canvas canvas, Seat seat, RectF r, boolean selected, boolean showNumber) {
+    /**
+     * Vẽ một ghế theo loại/trạng thái trong hệ tọa độ world (cạnh ghế chuẩn = 32 đơn vị).
+     * Dùng chung cho sơ đồ và bảng chú thích để ký hiệu luôn giống hệt nhau.
+     *
+     * @param label số ghế cần vẽ, hoặc null để ẩn
+     */
+    void drawSeatGlyph(Canvas canvas, RectF r, SeatType type, SeatStatus status,
+                       boolean selected, boolean dimmed, @Nullable String label) {
         float radius = r.height() * 0.24f;
+        int alpha = dimmed ? DIMMED_ALPHA : 0xFF;
         if (selected) {
-            seatFillPaint.setColor(selectedColor);
+            alpha = dimmed ? DIMMED_SELECTED_ALPHA : 0xFF;
+            seatFillPaint.setColor(withAlpha(selectedColor, alpha));
             canvas.drawRoundRect(r, radius, radius, seatFillPaint);
+            seatStrokePaint.setColor(withAlpha(selectedStrokeColor, alpha));
             tmpRect.set(r);
             tmpRect.inset(1.5f, 1.5f);
             canvas.drawRoundRect(tmpRect, radius, radius, seatStrokePaint);
-            drawCheck(canvas, r);
+            drawCheck(canvas, r, alpha);
             return;
         }
-        switch (seat.getStatus()) {
+        switch (status) {
             case AVAILABLE:
-                seatFillPaint.setColor(typeColor(seat.getType()));
+                seatFillPaint.setColor(withAlpha(typeColor(type), alpha));
                 canvas.drawRoundRect(r, radius, radius, seatFillPaint);
-                if (showNumber) {
-                    canvas.drawText(seat.getNumberLabel(), r.centerX(), r.centerY() + seatTextBaseline, seatTextPaint);
+                if (label != null) {
+                    canvas.drawText(label, r.centerX(), r.centerY() + seatTextBaseline, seatTextPaint);
                 }
                 break;
             case BOOKED:
-                seatFillPaint.setColor(bookedColor);
+                seatFillPaint.setColor(withAlpha(bookedColor, alpha));
                 canvas.drawRoundRect(r, radius, radius, seatFillPaint);
                 // Dải màu nhỏ phía trên giúp vẫn nhận ra loại ghế khi ghế đã được đặt.
-                seatFillPaint.setColor(typeColor(seat.getType()));
+                seatFillPaint.setColor(withAlpha(typeColor(type), alpha));
                 tmpRect.set(r.left + radius, r.top + 3f, r.right - radius, r.top + 6f);
                 canvas.drawRect(tmpRect, seatFillPaint);
-                drawCross(canvas, r);
+                drawCross(canvas, r, alpha);
                 break;
             case LOCKED:
             default:
+                lockedStrokePaint.setColor(withAlpha(lockedColor, alpha));
                 tmpRect.set(r);
                 tmpRect.inset(1f, 1f);
                 canvas.drawRoundRect(tmpRect, radius, radius, lockedStrokePaint);
-                drawLock(canvas, r);
+                drawLock(canvas, r, alpha);
                 break;
         }
     }
 
-    private void drawCheck(Canvas canvas, RectF r) {
+    private void drawCheck(Canvas canvas, RectF r, int alpha) {
         float s = r.height();
         float cx = r.centerX();
         float cy = r.centerY();
-        markPaint.setColor(0xFFFFFFFF);
+        markPaint.setColor(withAlpha(0xFFFFFFFF, alpha));
         markPaint.setStrokeWidth(s * 0.11f);
         canvas.drawLine(cx - s * 0.22f, cy + s * 0.01f, cx - s * 0.06f, cy + s * 0.17f, markPaint);
         canvas.drawLine(cx - s * 0.06f, cy + s * 0.17f, cx + s * 0.24f, cy - s * 0.15f, markPaint);
     }
 
-    private void drawCross(Canvas canvas, RectF r) {
+    private void drawCross(Canvas canvas, RectF r, int alpha) {
         float h = r.height() * 0.17f;
         float cx = r.centerX();
         float cy = r.centerY() + r.height() * 0.05f;
-        markPaint.setColor(bookedMarkColor);
+        markPaint.setColor(withAlpha(bookedMarkColor, alpha));
         markPaint.setStrokeWidth(r.height() * 0.08f);
         canvas.drawLine(cx - h, cy - h, cx + h, cy + h, markPaint);
         canvas.drawLine(cx - h, cy + h, cx + h, cy - h, markPaint);
     }
 
-    private void drawLock(Canvas canvas, RectF r) {
+    private void drawLock(Canvas canvas, RectF r, int alpha) {
         float s = r.height();
         float cx = r.centerX();
         float cy = r.centerY();
         // Thân khóa
-        seatFillPaint.setColor(lockedColor);
+        seatFillPaint.setColor(withAlpha(lockedColor, alpha));
         tmpRect.set(cx - s * 0.19f, cy - s * 0.04f, cx + s * 0.19f, cy + s * 0.24f);
         canvas.drawRoundRect(tmpRect, s * 0.05f, s * 0.05f, seatFillPaint);
         // Quai khóa
-        markPaint.setColor(lockedColor);
+        markPaint.setColor(withAlpha(lockedColor, alpha));
         markPaint.setStrokeWidth(s * 0.07f);
         tmpRect.set(cx - s * 0.12f, cy - s * 0.27f, cx + s * 0.12f, cy + s * 0.02f);
         canvas.drawArc(tmpRect, 180f, 180f, false, markPaint);
@@ -395,6 +449,10 @@ final class SeatRenderer {
             default:
                 return standardColor;
         }
+    }
+
+    private static int withAlpha(int color, int alpha) {
+        return (color & 0x00FFFFFF) | (alpha << 24);
     }
 
     private static RectF toRectF(WorldRect rect) {

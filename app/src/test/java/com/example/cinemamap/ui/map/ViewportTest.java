@@ -218,4 +218,44 @@ public class ViewportTest {
         assertTrue("content above screen", bottom > 0f);
         assertTrue("content below screen", top < VIEW_H);
     }
+
+    @Test
+    public void zoomLevelToFitShowsWholeAreaAndIsClamped() {
+        Viewport viewport = new Viewport(0f);
+        viewport.setContentSize(800f, 400f);
+        viewport.setViewSize(800f, 800f); // fitScale = 1
+        assertEquals(1f, viewport.getFitScale(), 1e-4f);
+        assertEquals(2f, viewport.getZoomLevelToFit(400f, 100f), 1e-4f);
+        assertEquals(Viewport.MAX_ZOOM, viewport.getZoomLevelToFit(10f, 10f), 1e-4f);
+        assertEquals(Viewport.MIN_ZOOM, viewport.getZoomLevelToFit(5000f, 5000f), 1e-4f);
+    }
+
+    @Test
+    public void minimumMaxScaleRaisesZoomLimitOnSmallViews() {
+        Viewport viewport = new Viewport(0f);
+        viewport.setContentSize(800f, 400f);
+        viewport.setViewSize(200f, 200f); // fitScale = 0,25 → 4× chỉ là 1 px/đơn vị
+        viewport.setMinimumMaxScale(3f);
+        assertEquals(3f, viewport.getMaxScale(), 1e-4f);
+        assertEquals(12f, viewport.getMaxZoomLevel(), 1e-4f);
+        viewport.zoomAround(100f, 100f, 100f);
+        assertEquals(3f, viewport.getScale(), 1e-4f);
+        // Khi vùng hiển thị lớn, giới hạn 4× vẫn là giới hạn lớn hơn.
+        viewport.setViewSize(3200f, 3200f);
+        assertEquals(16f, viewport.getMaxScale(), 1e-4f);
+    }
+
+    @Test
+    public void isAtCameraDetectsUnchangedTargetIncludingClampedOnes() {
+        Viewport viewport = new Viewport(0f);
+        viewport.setContentSize(800f, 400f);
+        viewport.setViewSize(800f, 800f);
+        viewport.restore(2f, 300f, 200f);
+        assertTrue(viewport.isAtCamera(2f, 300f, 200f));
+        assertFalse(viewport.isAtCamera(2.5f, 300f, 200f));
+        assertFalse(viewport.isAtCamera(2f, 320f, 200f));
+        // Đích nằm ngoài biên: so với góc nhìn sau khi đã giới hạn biên.
+        viewport.restore(1f, -5000f, 200f);
+        assertTrue(viewport.isAtCamera(1f, -5000f, 200f));
+    }
 }

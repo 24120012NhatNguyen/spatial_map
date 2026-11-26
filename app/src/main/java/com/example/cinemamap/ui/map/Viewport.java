@@ -22,7 +22,7 @@ public final class Viewport {
 
     /** Tỷ lệ nhỏ nhất so với tỷ lệ "vừa khít màn hình". */
     public static final float MIN_ZOOM = 0.75f;
-    /** Tỷ lệ lớn nhất so với tỷ lệ "vừa khít màn hình". */
+    /** Tỷ lệ lớn nhất so với tỷ lệ "vừa khít màn hình" (có thể lớn hơn, xem {@link #setMinimumMaxScale}). */
     public static final float MAX_ZOOM = 4f;
 
     private final float fitPadding;
@@ -37,6 +37,8 @@ public final class Viewport {
     private float insetBottom;
 
     private float fitScale = 1f;
+    /** Tỷ lệ tối đa không bao giờ nhỏ hơn giá trị này (px / đơn vị world); 0 = không áp dụng. */
+    private float minimumMaxScale;
     private float minScale = MIN_ZOOM;
     private float maxScale = MAX_ZOOM;
 
@@ -49,6 +51,19 @@ public final class Viewport {
     /** @param fitPadding khoảng đệm (px) quanh sơ đồ ở góc nhìn mặc định */
     public Viewport(float fitPadding) {
         this.fitPadding = fitPadding;
+    }
+
+    /**
+     * Đảm bảo mức phóng to tối đa luôn đủ lớn (ví dụ để đọc được số ghế) kể cả khi vùng hiển thị
+     * nhỏ làm tỷ lệ "vừa khít" rất nhỏ.
+     */
+    public void setMinimumMaxScale(float scale) {
+        minimumMaxScale = Math.max(0f, scale);
+        recomputeScaleLimits();
+        if (isReady()) {
+            this.scale = clamp(this.scale, minScale, maxScale);
+            clampTranslation();
+        }
     }
 
     public boolean isReady() {
@@ -212,6 +227,21 @@ public final class Viewport {
         return changed;
     }
 
+    /**
+     * Góc nhìn hiện tại đã trùng (sai số dưới nửa pixel) với góc nhìn {@link #restore} sẽ tạo ra
+     * hay chưa – để không chạy lại hiệu ứng camera vô ích khi đích đến không đổi.
+     */
+    public boolean isAtCamera(float zoomLevel, float worldCenterX, float worldCenterY) {
+        if (!isReady()) {
+            return false;
+        }
+        float s = clamp(zoomLevel * fitScale, minScale, maxScale);
+        float tx = clampAxis(availableCenterX() - worldCenterX * s, contentWidth * s, insetLeft, viewWidth - insetRight);
+        float ty = clampAxis(availableCenterY() - worldCenterY * s, contentHeight * s, insetTop, viewHeight - insetBottom);
+        return Math.abs(s - scale) <= scale * 1e-3f
+                && Math.abs(tx - translateX) <= 0.5f && Math.abs(ty - translateY) <= 0.5f;
+    }
+
     /** Điểm màn hình có nằm trong vùng hiển thị sơ đồ (không bị inset che) hay không. */
     public boolean isInAvailableArea(float screenX, float screenY) {
         return screenX >= insetLeft && screenX <= viewWidth - insetRight
@@ -295,6 +325,33 @@ public final class Viewport {
         return atDefault;
     }
 
+    /**
+     * Mức zoom tương đối để một vùng world kích thước {@code worldWidth × worldHeight} vừa khít
+     * vùng hiển thị (đã trừ inset và khoảng đệm), giới hạn trong [MIN_ZOOM, getMaxZoomLevel()].
+     */
+    public float getZoomLevelToFit(float worldWidth, float worldHeight) {
+        float availableWidth = viewWidth - insetLeft - insetRight - 2f * fitPadding;
+        float availableHeight = viewHeight - insetTop - insetBottom - 2f * fitPadding;
+        if (!isReady() || availableWidth <= 0f || availableHeight <= 0f) {
+            return 1f;
+        }
+        float fit = Math.min(availableWidth / Math.max(worldWidth, 1f), availableHeight / Math.max(worldHeight, 1f));
+        return clamp(fit / fitScale, MIN_ZOOM, getMaxZoomLevel());
+    }
+
+    public float getContentWidth() {
+        return contentWidth;
+    }
+
+    public float getContentHeight() {
+        return contentHeight;
+    }
+
+    /** Mức zoom tương đối lớn nhất (≥ {@link #MAX_ZOOM} nếu có {@link #setMinimumMaxScale}). */
+    public float getMaxZoomLevel() {
+        return maxScale / fitScale;
+    }
+
     /** Mức zoom tương đối: 1 = vừa khít màn hình. */
     public float getZoomLevel() {
         return scale / fitScale;
@@ -316,7 +373,7 @@ public final class Viewport {
         }
         fitScale = Math.min(availableWidth / contentWidth, availableHeight / contentHeight);
         minScale = fitScale * MIN_ZOOM;
-        maxScale = fitScale * MAX_ZOOM;
+        maxScale = Math.max(fitScale * MAX_ZOOM, minimumMaxScale);
     }
 
     /** Giới hạn Pan: tâm vùng hiển thị luôn nằm trên sơ đồ (xem mô tả lớp). */

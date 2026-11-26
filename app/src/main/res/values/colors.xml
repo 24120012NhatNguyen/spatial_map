@@ -17,6 +17,8 @@
     <color name="seat_booked">#FF3A3F47</color>
     <color name="seat_booked_mark">#FF7A808A</color>
     <color name="seat_locked">#FF6B7280</color>
+    <!-- Vòng sáng khi định vị một ghế từ Bottom Sheet / tìm kiếm -->
+    <color name="seat_highlight">#FFFFFFFF</color>
 
     <!-- Sơ đồ -->
     <color name="screen">#FFDDE6FF</color>

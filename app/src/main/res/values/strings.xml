@@ -3,16 +3,55 @@
     <string name="app_name">Spatial Map – Rạp phim</string>
     <string name="seat_map_description">Sơ đồ ghế phòng chiếu. Kéo để di chuyển, chụm hai ngón để phóng to thu nhỏ, chạm vào ghế để chọn.</string>
     <string name="toolbar_subtitle">%1$s · %2$s</string>
+    <string name="action_reset_view">Đặt lại góc nhìn</string>
 
+    <!-- Bottom Sheet -->
     <string name="summary_empty_title">Chưa chọn ghế</string>
     <string name="summary_empty_detail">Chạm vào ghế trống để chọn · tối đa %1$d ghế</string>
     <string name="summary_title">Đã chọn %1$d/%2$d ghế · %3$s</string>
+    <string name="sheet_list_title">Ghế đã chọn</string>
+    <string name="sheet_clear_all">Bỏ chọn tất cả</string>
+    <string name="sheet_empty_list">Danh sách trống. Chạm vào ghế trống trên sơ đồ để thêm.</string>
+    <string name="sheet_expand">Mở rộng danh sách ghế đã chọn</string>
+    <string name="sheet_collapse">Thu gọn danh sách ghế đã chọn</string>
+    <string name="seat_item_title">%1$s · %2$s</string>
+    <string name="seat_item_detail">Hàng %1$s · Số %2$d · %3$s</string>
+    <string name="seat_item_filtered_out">Ngoài bộ lọc</string>
+    <string name="seat_item_remove">Bỏ chọn ghế %1$s</string>
+    <string name="seat_item_locate">Định vị ghế %1$s trên sơ đồ</string>
+    <string name="selection_cleared">Đã bỏ chọn tất cả ghế</string>
 
+    <!-- Thông báo khi chạm ghế -->
     <string name="seat_booked">Ghế %1$s đã có người đặt</string>
     <string name="seat_locked">Ghế %1$s đang bị khóa (bảo trì)</string>
     <string name="seat_limit_reached">Chỉ được chọn tối đa %1$d ghế</string>
+    <string name="seat_filtered_out">Ghế %1$s không khớp bộ lọc hiện tại</string>
+
+    <!-- Bộ lọc / tìm kiếm -->
+    <string name="search_hint">Tìm ghế: E9, hàng E…</string>
+    <string name="filter_standard">Ghế thường</string>
+    <string name="filter_vip">Ghế VIP</string>
+    <string name="filter_couple">Ghế đôi</string>
+    <string name="filter_available">Còn trống</string>
+    <string name="filter_status">Đang lọc · %1$d ghế khớp</string>
+    <string name="filter_status_clear">Xóa bộ lọc</string>
+    <string name="filter_no_results_title">Không có ghế nào khớp</string>
+    <string name="filter_no_results_detail">Thử mã khác (E9, hàng E, số 9) hoặc bỏ bớt điều kiện.</string>
+    <string name="filter_clear">Xóa bộ lọc</string>
+
+    <!-- Bảng chú thích -->
+    <string name="legend_standard">Thường (trống)</string>
+    <string name="legend_vip">VIP (trống)</string>
+    <string name="legend_couple">Đôi (trống)</string>
+    <string name="legend_selected">Đang chọn</string>
+    <string name="legend_booked">Đã đặt</string>
+    <string name="legend_locked">Bị khóa</string>
+    <string name="legend_dimmed">Ngoài bộ lọc</string>
+    <string name="legend_located">Đang định vị</string>
+    <string name="legend_description">Chú thích: %1$s</string>
 
     <!-- TalkBack: "Ghế E7, Ghế VIP, 95.000đ, Còn trống" -->
     <string name="a11y_seat">Ghế %1$s, %2$s, %3$s, %4$s</string>
     <string name="a11y_state_selected">Đang chọn</string>
+    <string name="a11y_state_filtered_out">%1$s, không khớp bộ lọc</string>
 </resources>

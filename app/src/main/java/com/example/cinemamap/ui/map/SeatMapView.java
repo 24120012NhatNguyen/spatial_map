@@ -1,5 +1,8 @@
 package com.example.cinemamap.ui.map;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Rect;
@@ -14,6 +17,8 @@ import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewParent;
+import android.view.animation.LinearInterpolator;
+import android.view.animation.PathInterpolator;
 import android.widget.OverScroller;
 
 import androidx.annotation.NonNull;
@@ -26,6 +31,7 @@ import com.example.cinemamap.data.CinemaLayout;
 import com.example.cinemamap.data.MockCinemaRepository;
 import com.example.cinemamap.data.PriceFormatter;
 import com.example.cinemamap.data.Seat;
+import com.example.cinemamap.data.WorldRect;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -51,6 +57,12 @@ public class SeatMapView extends View {
     private static final float MAX_WORLD_TOLERANCE = MockCinemaRepository.SEAT_SIZE * 0.4f;
     /** Chỉ vẽ số ghế khi cạnh ghế trên màn hình đủ lớn (dp). */
     private static final float MIN_SEAT_DP_FOR_NUMBERS = 22f;
+    /** Mức zoom tối đa luôn đủ để cạnh ghế đạt ít nhất chừng này (dp), kể cả khi vùng sơ đồ nhỏ. */
+    private static final float MIN_MAX_ZOOM_SEAT_DP = 48f;
+    /** Khi định vị một ghế, phóng to tới khi cạnh ghế khoảng chừng này (dp). */
+    private static final float FOCUS_SEAT_DP = 40f;
+    private static final long CAMERA_ANIM_MS = 450L;
+    private static final long HIGHLIGHT_ANIM_MS = 1600L;
 
     private final float density;
     private final Viewport viewport;
@@ -66,6 +78,11 @@ public class SeatMapView extends View {
     @Nullable
     private CinemaLayout layout;
     private boolean[] selectedFlags = new boolean[0];
+    /** Cờ khớp bộ lọc theo chỉ số ghế; null = không lọc. */
+    @Nullable
+    private boolean[] filterMatches;
+    /** Cờ "vẽ mờ" = không khớp bộ lọc (ghế đã chọn bị mờ nhẹ hơn và vẫn giữ dấu ✓). */
+    private boolean[] dimmedFlags = new boolean[0];
     @Nullable
     private OnSeatClickListener seatClickListener;
 
@@ -77,6 +94,22 @@ public class SeatMapView extends View {
     private boolean pinchedInGesture;
     @Nullable
     private SavedState pendingState;
+
+    // Hiệu ứng camera (Reset View, định vị ghế): nội suy mức zoom theo cấp số nhân, tâm theo tuyến tính.
+    private final ValueAnimator cameraAnimator = ValueAnimator.ofFloat(0f, 1f);
+    private float animFromZoom;
+    private float animToZoom;
+    private float animFromCx;
+    private float animToCx;
+    private float animFromCy;
+    private float animToCy;
+    /** true nếu hiệu ứng đang đưa về góc nhìn mặc định (kết thúc bằng resetToDefault). */
+    private boolean animToDefault;
+    private boolean cameraAnimCancelled;
+
+    // Vòng sáng nhấp nháy quanh ghế vừa được định vị.
+    private final ValueAnimator highlightAnimator = ValueAnimator.ofFloat(0f, 1f);
+    private int highlightIndex = HitTester.NO_HIT;
 
     public SeatMapView(Context context) {
         this(context, null);
@@ -90,6 +123,7 @@ public class SeatMapView extends View {
         super(context, attrs, defStyleAttr);
         density = getResources().getDisplayMetrics().density;
         viewport = new Viewport(FIT_PADDING_DP * density);
+        viewport.setMinimumMaxScale(MIN_MAX_ZOOM_SEAT_DP * density / MockCinemaRepository.SEAT_SIZE);
         renderer = new SeatRenderer(context);
         scroller = new OverScroller(context);
         scaleDetector = new ScaleGestureDetector(context, new ScaleListener());
@@ -105,6 +139,48 @@ public class SeatMapView extends View {
         // Mỗi ghế là một "virtual view" cho TalkBack mà vẫn vẽ trên một Canvas duy nhất.
         accessibilityHelper = new SeatAccessibilityHelper(this);
         ViewCompat.setAccessibilityDelegate(this, accessibilityHelper);
+        setupAnimators();
+    }
+
+    private void setupAnimators() {
+        cameraAnimator.setDuration(CAMERA_ANIM_MS);
+        cameraAnimator.setInterpolator(new PathInterpolator(0.4f, 0f, 0.2f, 1f));
+        cameraAnimator.addUpdateListener(animation -> {
+            float f = (float) animation.getAnimatedValue();
+            float zoom = (float) (animFromZoom * Math.pow(animToZoom / animFromZoom, f));
+            viewport.restore(zoom, animFromCx + (animToCx - animFromCx) * f, animFromCy + (animToCy - animFromCy) * f);
+            invalidate();
+        });
+        cameraAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationStart(Animator animation) {
+                cameraAnimCancelled = false;
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                cameraAnimCancelled = true;
+            }
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (!cameraAnimCancelled) {
+                    applyCameraTarget();
+                    invalidate();
+                }
+            }
+        });
+
+        highlightAnimator.setDuration(HIGHLIGHT_ANIM_MS);
+        highlightAnimator.setInterpolator(new LinearInterpolator());
+        highlightAnimator.addUpdateListener(animation -> invalidate());
+        highlightAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                highlightIndex = HitTester.NO_HIT;
+                invalidate();
+            }
+        });
     }
 
     // region Public API
@@ -113,6 +189,8 @@ public class SeatMapView extends View {
         layout = cinemaLayout;
         renderer.prepare(cinemaLayout);
         selectedFlags = new boolean[cinemaLayout.getSeats().size()];
+        dimmedFlags = new boolean[selectedFlags.length];
+        filterMatches = null;
         viewport.setContentSize(cinemaLayout.getWidth(), cinemaLayout.getHeight());
         applyPendingState();
         invalidate();
@@ -136,6 +214,99 @@ public class SeatMapView extends View {
         }
         invalidate();
         accessibilityHelper.invalidateRoot();
+    }
+
+    /**
+     * Kết quả bộ lọc theo chỉ số ghế (từ ViewModel); null = không lọc. Ghế không khớp được vẽ mờ;
+     * ghế đang chọn mà không khớp chỉ mờ nhẹ và vẫn bỏ chọn được.
+     */
+    public void setFilterMatches(@Nullable boolean[] matches) {
+        if (layout == null) {
+            return;
+        }
+        if (matches != null && matches.length != selectedFlags.length) {
+            throw new IllegalArgumentException("matches.length must equal the seat count");
+        }
+        if (Arrays.equals(filterMatches, matches)) {
+            return; // Kết quả hiển thị không đổi (ví dụ "Z" → "ZZ"): không vẽ lại.
+        }
+        filterMatches = matches;
+        updateDimmedFlags();
+        invalidate();
+        accessibilityHelper.invalidateRoot();
+    }
+
+    private void updateDimmedFlags() {
+        for (int i = 0; i < dimmedFlags.length; i++) {
+            dimmedFlags[i] = filterMatches != null && !filterMatches[i];
+        }
+    }
+
+    /**
+     * Reset View: đưa sơ đồ về vị trí và tỷ lệ mặc định bằng hiệu ứng mượt.
+     * Chỉ đổi góc nhìn – không đụng tới bộ lọc hay danh sách ghế đang chọn.
+     */
+    public void resetView() {
+        if (!viewport.isReady() || (viewport.isAtDefault() && !cameraAnimator.isRunning())) {
+            return;
+        }
+        animateCamera(1f, viewport.getContentWidth() * 0.5f, viewport.getContentHeight() * 0.5f, true);
+    }
+
+    /** Định vị một ghế: đưa ghế vào giữa, phóng to đủ để đọc số ghế và nháy vòng sáng quanh ghế. */
+    public void focusSeat(@NonNull String seatId) {
+        if (layout == null || !viewport.isReady()) {
+            return;
+        }
+        Seat seat = layout.findSeat(seatId);
+        if (seat == null) {
+            return;
+        }
+        float zoomForSeat = FOCUS_SEAT_DP * density / MockCinemaRepository.SEAT_SIZE / viewport.getFitScale();
+        float zoom = Math.min(Math.max(currentTargetZoom(), zoomForSeat), viewport.getMaxZoomLevel());
+        WorldRect b = seat.getBounds();
+        animateCamera(zoom, b.centerX(), b.centerY(), false);
+        highlightAnimator.cancel(); // onAnimationEnd của lần trước xóa chỉ số → gán sau khi hủy.
+        highlightIndex = seat.getIndex();
+        highlightAnimator.start();
+    }
+
+    /** Đưa camera tới một vùng world (ví dụ các ghế khớp từ khóa tìm kiếm), có chừa lề. */
+    public void showWorldArea(@NonNull WorldRect area) {
+        if (!viewport.isReady()) {
+            return;
+        }
+        float margin = MockCinemaRepository.SEAT_SIZE;
+        float zoom = Math.max(1f, viewport.getZoomLevelToFit(area.width() + 2f * margin, area.height() + 2f * margin));
+        animateCamera(zoom, area.centerX(), area.centerY(), false);
+    }
+
+    private float currentTargetZoom() {
+        return cameraAnimator.isRunning() && !animToDefault ? animToZoom : viewport.getZoomLevel();
+    }
+
+    private void animateCamera(float toZoom, float toCx, float toCy, boolean toDefault) {
+        if (!cameraAnimator.isRunning() && !toDefault && viewport.isAtCamera(toZoom, toCx, toCy)) {
+            return; // Đã ở đúng đích (ví dụ bấm Tìm lần nữa): không vẽ lại 450ms vô ích.
+        }
+        scroller.forceFinished(true);
+        cameraAnimator.cancel();
+        animFromZoom = viewport.getZoomLevel();
+        animFromCx = viewport.getWorldCenterX();
+        animFromCy = viewport.getWorldCenterY();
+        animToZoom = toZoom;
+        animToCx = toCx;
+        animToCy = toCy;
+        animToDefault = toDefault;
+        cameraAnimator.start();
+    }
+
+    private void applyCameraTarget() {
+        if (animToDefault) {
+            viewport.resetToDefault();
+        } else {
+            viewport.restore(animToZoom, animToCx, animToCy);
+        }
     }
 
     /** Vùng bị che bởi các thành phần nổi phía trên sơ đồ (px). */
@@ -174,8 +345,18 @@ public class SeatMapView extends View {
         int save = canvas.save();
         canvas.translate(viewport.getTranslateX(), viewport.getTranslateY());
         canvas.scale(scale, scale);
-        renderer.draw(canvas, layout, selectedFlags, visibleWorld, scale, density, showNumbers);
+        renderer.draw(canvas, layout, selectedFlags, dimmedFlags, visibleWorld, scale, density, showNumbers);
+        if (highlightIndex != HitTester.NO_HIT) {
+            renderer.drawHighlight(canvas, highlightIndex, highlightAnimator.getAnimatedFraction(), scale, density);
+        }
         canvas.restoreToCount(save);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        cameraAnimator.cancel();
+        highlightAnimator.cancel();
+        super.onDetachedFromWindow();
     }
 
     // endregion
@@ -189,6 +370,7 @@ public class SeatMapView extends View {
         }
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
             scroller.forceFinished(true);
+            cameraAnimator.cancel(); // Người dùng chạm vào là dừng hiệu ứng camera, giữ nguyên chỗ đang dừng.
             pinchedInGesture = false;
             ViewParent parent = getParent();
             if (parent != null) {
@@ -376,6 +558,9 @@ public class SeatMapView extends View {
             String state = selected
                     ? getContext().getString(com.example.cinemamap.R.string.a11y_state_selected)
                     : seat.getStatus().getDisplayName();
+            if (dimmedFlags[virtualViewId]) {
+                state = getContext().getString(com.example.cinemamap.R.string.a11y_state_filtered_out, state);
+            }
             node.setContentDescription(getContext().getString(com.example.cinemamap.R.string.a11y_seat,
                     seat.getId(), seat.getType().getDisplayName(), PriceFormatter.format(seat.getPrice()), state));
             node.setSelected(selected);
@@ -407,7 +592,14 @@ public class SeatMapView extends View {
     @Override
     protected Parcelable onSaveInstanceState() {
         SavedState state = new SavedState(super.onSaveInstanceState());
-        if (viewport.isReady()) {
+        if (viewport.isReady() && cameraAnimator.isRunning()) {
+            // Đang chạy hiệu ứng: lưu đích đến để sau khi xoay màn hình góc nhìn đúng như dự định.
+            state.hasViewport = true;
+            state.atDefault = animToDefault;
+            state.zoomLevel = animToZoom;
+            state.worldCenterX = animToCx;
+            state.worldCenterY = animToCy;
+        } else if (viewport.isReady()) {
             state.hasViewport = true;
             state.atDefault = viewport.isAtDefault();
             state.zoomLevel = viewport.getZoomLevel();

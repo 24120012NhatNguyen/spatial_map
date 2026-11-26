@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Chiều rộng thẻ tóm tắt khi đặt ở cạnh phải (màn hình ngang). -->
-    <dimen name="summary_card_side_width">320dp</dimen>
+    <!-- Chiều rộng cột điều khiển bên phải (màn hình ngang). -->
+    <dimen name="side_panel_width">320dp</dimen>
+    <!-- Chiều cao Bottom Sheet khi thu gọn (thanh kéo + phần tóm tắt). -->
+    <dimen name="sheet_peek_height">80dp</dimen>
+    <dimen name="sheet_handle_area">18dp</dimen>
 </resources>

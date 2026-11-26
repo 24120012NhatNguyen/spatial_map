@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Màn hình dọc: Bottom Sheet nằm đè lên sơ đồ khi mở rộng. -->
+    <bool name="sheet_overlaps_map">true</bool>
+</resources>

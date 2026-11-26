@@ -1,20 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- splitMotionEvents=false: cử chỉ bắt đầu ở sơ đồ được giao trọn cho sơ đồ, ngón thứ hai
-     đặt lên thẻ tóm tắt không làm cử chỉ pinch bị tách thành một lần chạm. -->
+<!-- Màn hình ngang: sơ đồ chiếm phần lớn bên trái; cột phải chứa tìm kiếm, chip lọc, chú thích
+     và Bottom Sheet (mở rộng trong cột nên không bao giờ che sơ đồ). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/floor"
+    android:defaultFocusHighlightEnabled="false"
+    android:focusable="true"
+    android:focusableInTouchMode="true"
     android:orientation="vertical"
-    android:splitMotionEvents="false">
+    android:splitMotionEvents="false"
+    tools:targetApi="o">
 
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/surface"
+        app:menu="@menu/main_menu"
         app:subtitleTextColor="@color/on_surface_muted"
         app:titleTextColor="@color/on_surface" />
 
@@ -25,59 +31,60 @@
         android:orientation="horizontal"
         android:splitMotionEvents="false">
 
-        <com.example.cinemamap.ui.map.SeatMapView
-            android:id="@+id/seat_map"
+        <FrameLayout
+            android:id="@+id/map_container"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:contentDescription="@string/seat_map_description" />
+            android:layout_weight="1">
 
-        <!-- Cột bên phải chứa thẻ tóm tắt: sơ đồ giữ trọn chiều cao màn hình ngang. -->
-        <FrameLayout
-            android:layout_width="@dimen/summary_card_side_width"
-            android:layout_height="match_parent">
-
-            <!-- Tóm tắt lựa chọn (sẽ được nâng cấp thành Expandable Bottom Sheet ở giai đoạn 2).
-                 Nằm ngoài vùng của sơ đồ nên không che ghế và không nhận nhầm chạm. -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/summary_card"
+            <com.example.cinemamap.ui.map.SeatMapView
+                android:id="@+id/seat_map"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_gravity="bottom"
-                android:layout_margin="12dp"
-                app:cardBackgroundColor="@color/surface"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="6dp"
-                app:strokeWidth="0dp">
+                android:layout_height="match_parent"
+                android:contentDescription="@string/seat_map_description" />
+
+            <include layout="@layout/view_no_results" />
+        </FrameLayout>
+
+        <androidx.coordinatorlayout.widget.CoordinatorLayout
+            android:id="@+id/coordinator"
+            android:layout_width="@dimen/side_panel_width"
+            android:layout_height="match_parent"
+            android:splitMotionEvents="false">
+
+            <androidx.core.widget.NestedScrollView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_marginBottom="@dimen/sheet_peek_height">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="12dp">
+                    android:paddingHorizontal="12dp"
+                    android:paddingTop="8dp">
 
-                    <TextView
-                        android:id="@+id/summary_title"
+                    <include layout="@layout/view_search_field" />
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/filter_chips"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:ellipsize="end"
-                        android:maxLines="1"
-                        android:textAppearance="?attr/textAppearanceTitleMedium"
-                        android:textColor="@color/on_surface" />
+                        app:chipSpacingHorizontal="8dp"
+                        app:chipSpacingVertical="0dp">
 
-                    <!-- Cố định 2 dòng để chiều cao thẻ không đổi khi chọn ghế → sơ đồ không bị xê dịch. -->
-                    <TextView
-                        android:id="@+id/summary_detail"
+                        <include layout="@layout/merge_filter_chips" />
+                    </com.google.android.material.chip.ChipGroup>
+
+                    <com.example.cinemamap.ui.map.LegendView
+                        android:id="@+id/legend"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:ellipsize="end"
-                        android:lines="2"
-                        android:textAppearance="?attr/textAppearanceBodyMedium"
-                        android:textColor="@color/on_surface_muted" />
+                        android:paddingVertical="6dp" />
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-        </FrameLayout>
+            </androidx.core.widget.NestedScrollView>
+
+            <include layout="@layout/view_selection_sheet" />
+        </androidx.coordinatorlayout.widget.CoordinatorLayout>
     </LinearLayout>
 </LinearLayout>

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Các chip lọc dùng chung cho màn hình dọc (một dòng, cuộn ngang) và ngang (tự xuống dòng).
+     saveEnabled=false: trạng thái chip lấy từ ViewModel, không để View tự khôi phục. -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!-- Chỉ hiện khi đang lọc: cho biết số ghế khớp và xóa toàn bộ điều kiện. -->
+    <com.google.android.material.chip.Chip
+        android:id="@+id/chip_filter_status"
+        style="@style/Widget.Material3.Chip.Input"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:checkable="false"
+        android:saveEnabled="false"
+        android:visibility="gone"
+        app:closeIcon="@drawable/ic_close"
+        app:closeIconVisible="true" />
+
+    <com.google.android.material.chip.Chip
+        android:id="@+id/chip_standard"
+        style="@style/Widget.Material3.Chip.Filter"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:saveEnabled="false"
+        android:text="@string/filter_standard" />
+
+    <com.google.android.material.chip.Chip
+        android:id="@+id/chip_vip"
+        style="@style/Widget.Material3.Chip.Filter"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:saveEnabled="false"
+        android:text="@string/filter_vip" />
+
+    <com.google.android.material.chip.Chip
+        android:id="@+id/chip_couple"
+        style="@style/Widget.Material3.Chip.Filter"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:saveEnabled="false"
+        android:text="@string/filter_couple" />
+
+    <com.google.android.material.chip.Chip
+        android:id="@+id/chip_available"
+        style="@style/Widget.Material3.Chip.Filter"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:saveEnabled="false"
+        android:text="@string/filter_available" />
+</merge>

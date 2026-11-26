@@ -22,7 +22,9 @@ public final class SeatSelection {
         BOOKED,
         LOCKED,
         LIMIT_REACHED,
-        NOT_FOUND
+        NOT_FOUND,
+        /** Ghế bị bộ lọc làm mờ – do {@link SeatMapViewModel} trả về, lựa chọn không đổi. */
+        FILTERED_OUT
     }
 
     private final CinemaLayout layout;
